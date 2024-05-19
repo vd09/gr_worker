@@ -7,6 +7,7 @@ import (
 
 	gr_variable "github.com/vd09/gr-variable"
 	"github.com/vd09/gr_worker"
+	"github.com/vd09/gr_worker/domain"
 )
 
 type mockLogger struct{}
@@ -20,7 +21,7 @@ func TestIdealTimeoutWorker_Start(t *testing.T) {
 	mockTasks := gr_variable.NewGrChannel[*gr_worker.Task]()
 
 	isMockStopFuncCalled := false
-	mockStopFunc := func(bool) bool { isMockStopFuncCalled = true; return true }
+	mockStopFunc := func(domain.WorkerStatus) bool { isMockStopFuncCalled = true; return true }
 
 	// Create an IdealTimeoutWorker instance
 	worker := NewIdealTimeoutWorker(ctx, time.Second, mockLogger, mockTasks, mockStopFunc)

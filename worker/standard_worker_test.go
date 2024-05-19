@@ -7,6 +7,7 @@ import (
 
 	"github.com/vd09/gr-variable"
 	"github.com/vd09/gr_worker"
+	"github.com/vd09/gr_worker/domain"
 	"github.com/vd09/gr_worker/logger"
 	"github.com/vd09/gr_worker/worker"
 )
@@ -31,7 +32,7 @@ func TestStandardWorker_Start(t *testing.T) {
 	mockTasks := gr_variable.NewGrChannel[*gr_worker.Task]()
 
 	// Create a StandardWorker instance
-	newWorker := worker.NewStandardWorker(ctx, mockTasks, logger.Discard)
+	newWorker := worker.NewStandardWorker(ctx, mockTasks, logger.Discard, func(domain.WorkerStatus) bool { return true })
 
 	// Run the worker
 	go newWorker.Start()

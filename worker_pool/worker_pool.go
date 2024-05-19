@@ -5,4 +5,5 @@ type WorkerPool interface {
 	AddTaskIfSpaceAvailable(taskFunc interface{}, params ...interface{}) bool
 	IsWorkerPoolStopped() bool
 	Stop()
+	WaitAndStop()
 }

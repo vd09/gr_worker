@@ -5,6 +5,7 @@ import (
 
 	gr_variable "github.com/vd09/gr-variable"
 	"github.com/vd09/gr_worker"
+	"github.com/vd09/gr_worker/domain"
 	"github.com/vd09/gr_worker/logger"
 )
 
@@ -13,7 +14,8 @@ type SingleTaskWorker struct {
 	ctxCancel context.CancelFunc
 	logger    logger.Logger
 
-	tasks gr_variable.ReadOnlyGrChannel[*gr_worker.Task]
+	isEligibleToStop IsEligibleToStopFunc
+	tasks            gr_variable.ReadOnlyGrChannel[*gr_worker.Task]
 }
 
 func (btw *SingleTaskWorker) Start() {
@@ -25,7 +27,9 @@ func (btw *SingleTaskWorker) Start() {
 	for {
 		select {
 		case <-btw.ctx.Done():
-			return
+			if btw.isEligibleToStop(domain.CONTEXT_DONE) {
+				return
+			}
 		default:
 			if err := assignedTask.ExecuteTask(); err != nil {
 				btw.logger.Printf("[ERROR] Function %#v return non nil result: %#v", assignedTask, err)
@@ -34,13 +38,15 @@ func (btw *SingleTaskWorker) Start() {
 	}
 }
 
-func NewSingleTaskWorker(parentCtx context.Context, tasks gr_variable.GrChannel[*gr_worker.Task], logger logger.Logger) Worker {
+func NewSingleTaskWorker(parentCtx context.Context, tasks gr_variable.GrChannel[*gr_worker.Task], logger logger.Logger,
+	stopFunc IsEligibleToStopFunc) Worker {
 
 	ctx, cancelCtx := context.WithCancel(parentCtx)
 	return &SingleTaskWorker{
-		ctx:       ctx,
-		ctxCancel: cancelCtx,
-		tasks:     tasks,
-		logger:    logger,
+		ctx:              ctx,
+		ctxCancel:        cancelCtx,
+		tasks:            tasks,
+		logger:           logger,
+		isEligibleToStop: stopFunc,
 	}
 }

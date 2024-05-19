@@ -2,6 +2,8 @@ package worker_pool
 
 import (
 	"fmt"
+	"math"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -76,14 +78,15 @@ func TestWorkerPoolAdapter_AddTask(t *testing.T) {
 
 	basicFunction := func() { time.Sleep(20 * time.Second) }
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 5; i++ {
 		taskAdded := wp.AddTask(basicFunction)
 		time.Sleep(time.Millisecond)
 		if !taskAdded {
 			t.Error("task not added to worker pool")
 		}
-		if wp.activeWorkerCount.Load() != int32(i+1) {
-			t.Error(fmt.Sprintf("total worker (%d) are not matching as expected (%d)", wp.activeWorkerCount.Load(), i+1))
+		workers := math.Min(float64(i+1), 3)
+		if wp.activeWorkerCount.Load() != int32(workers) {
+			t.Error(fmt.Sprintf("total worker (%d) are not matching as expected (%v)", wp.activeWorkerCount.Load(), workers))
 		}
 	}
 	taskAdded := wp.AddTask(basicFunction)
@@ -93,5 +96,46 @@ func TestWorkerPoolAdapter_AddTask(t *testing.T) {
 	if wp.activeWorkerCount.Load() != 3 {
 		t.Error(fmt.Sprintf("total worker (%d) are not matching as expected (3)", wp.activeWorkerCount.Load()))
 
+	}
+}
+
+func TestWorkerPoolAdapter_WaitAndStop(t *testing.T) {
+	// Create a worker pool with default options
+	wp, err := NewWorkerPool(
+		WithMinWorkers(1),
+		WithMaxWorkers(3),
+		WithMaxTasks(5),
+	)
+	if err != nil {
+		t.Fatalf("error creating worker pool: %v", err)
+	}
+
+	// Define a task that will take some time to complete
+	taskDuration := 2 * time.Second
+	var count atomic.Int32
+	basicFunction := func() {
+		time.Sleep(taskDuration)
+		count.Add(1)
+	}
+
+	// Add tasks to the worker pool
+	numTasks := 3
+	for i := 0; i < numTasks; i++ {
+		taskAdded := wp.AddTask(basicFunction)
+		if !taskAdded {
+			t.Errorf("task %d not added to worker pool", i+1)
+		}
+	}
+
+	// Call WaitAndStop and measure the time taken
+	wp.WaitAndStop()
+
+	if int(count.Load()) != numTasks {
+		t.Errorf("WaitAndStop returned before all tasks completed; elapsed tasks: %v, expected: %v", count.Load(), numTasks)
+	}
+
+	// Verify that the worker pool is stopped
+	if !wp.IsWorkerPoolStopped() {
+		t.Error("worker pool not stopped after WaitAndStop")
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	gr_variable "github.com/vd09/gr-variable"
 	"github.com/vd09/gr_worker"
+	"github.com/vd09/gr_worker/domain"
 	"github.com/vd09/gr_worker/logger"
 )
 
@@ -31,7 +32,7 @@ func TestSingleTaskWorker_Start(t *testing.T) {
 	mockTasks := gr_variable.NewGrChannel[*gr_worker.Task]()
 
 	// Create a SingleTaskWorker instance
-	worker := NewSingleTaskWorker(ctx, mockTasks, logger.Discard)
+	worker := NewSingleTaskWorker(ctx, mockTasks, logger.Discard, func(domain.WorkerStatus) bool { return true })
 
 	// Run the worker
 	go worker.Start()

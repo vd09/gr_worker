@@ -8,6 +8,7 @@ import (
 
 	gr_variable "github.com/vd09/gr-variable"
 	"github.com/vd09/gr_worker"
+	"github.com/vd09/gr_worker/domain"
 	"github.com/vd09/gr_worker/logger"
 	"github.com/vd09/gr_worker/worker"
 )
@@ -92,6 +93,17 @@ func (wp *WorkerPoolAdapter) Stop() {
 	wp.tasks.StopWriting()
 }
 
+func (wp *WorkerPoolAdapter) WaitAndStop() {
+	wp.tasks.StopWriting()
+	for {
+		if wp.activeWorkerCount.Load() <= 0 {
+			wp.cancelCtx()
+			wp.stopped.Store(true)
+			return
+		}
+	}
+}
+
 func (wp *WorkerPoolAdapter) AddTaskIfSpaceAvailable(taskFunc interface{}, params ...interface{}) bool {
 	if wp.IsWorkerPoolStopped() {
 		return false
@@ -134,43 +146,47 @@ func (wp *WorkerPoolAdapter) startNewWorkerIfRequired() {
 func (wp *WorkerPoolAdapter) createNewWorker() worker.Worker {
 	switch wp.strategy {
 	case worker.STANDARD_WORKER:
-		return worker.NewStandardWorker(wp.ctx, wp.tasks, wp.logger)
+		return worker.NewStandardWorker(wp.ctx, wp.tasks, wp.logger, wp.decreaseWorkerCount)
 	case worker.IDEAL_WORKER_TIMEOUT:
-		return worker.NewIdealTimeoutWorker(wp.ctx, wp.idleTimeout, wp.logger, wp.tasks, wp.canStopWorker)
+		return worker.NewIdealTimeoutWorker(wp.ctx, wp.idleTimeout, wp.logger, wp.tasks, wp.decreaseWorkerCount)
 	case worker.SINGLE_TASK_WORKER:
-		return worker.NewSingleTaskWorker(wp.ctx, wp.tasks, wp.logger)
+		return worker.NewSingleTaskWorker(wp.ctx, wp.tasks, wp.logger, wp.decreaseWorkerCount)
 	}
 	return nil
 }
 
-func (wp *WorkerPoolAdapter) canStopWorker(isCtxDone bool) bool {
-	return isCtxDone || wp.decreaseWorkerCount()
-}
+//func (wp *WorkerPoolAdapter) canStopWorker(isCtxDone bool) bool {
+//	return isCtxDone || wp.decreaseWorkerCount()
+//}
 
 func (wp *WorkerPoolAdapter) increaseWorkerCount() bool {
+	wp.mutex.Lock()
+	defer wp.mutex.Unlock()
+
 	if wp.IsWorkerPoolStopped() {
 		return false
 	}
 	if wp.activeWorkerCount.Load() >= wp.maxWorkers {
 		return false
 	}
-	if wp.idleWorkerCount.Load() > 0 && wp.activeWorkerCount.Load() >= wp.minWorkers {
+	if int(wp.idleWorkerCount.Load()) > len(wp.tasks.Receive()) && wp.activeWorkerCount.Load() >= wp.minWorkers {
 		return false
 	}
 
-	wp.mutex.Lock()
 	wp.idleWorkerCount.Add(1)
 	wp.activeWorkerCount.Add(1)
-	wp.mutex.Unlock()
 	return true
 }
 
-func (wp *WorkerPoolAdapter) decreaseWorkerCount() bool {
+func (wp *WorkerPoolAdapter) decreaseWorkerCount(workerStatus domain.WorkerStatus) bool {
 	wp.mutex.Lock()
 	defer wp.mutex.Unlock()
 
-	if wp.idleWorkerCount.Load() <= 0 || (wp.activeWorkerCount.Load() <= wp.minWorkers) {
-		return false
+	switch workerStatus {
+	case domain.TIMEOUT:
+		if wp.idleWorkerCount.Load() <= 0 || (wp.activeWorkerCount.Load() <= wp.minWorkers) {
+			return false
+		}
 	}
 
 	wp.idleWorkerCount.Add(-1)

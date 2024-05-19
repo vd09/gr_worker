@@ -6,6 +6,7 @@ import (
 
 	gr_variable "github.com/vd09/gr-variable"
 	"github.com/vd09/gr_worker"
+	"github.com/vd09/gr_worker/domain"
 	"github.com/vd09/gr_worker/logger"
 )
 
@@ -28,21 +29,23 @@ func (itw *IdealTimeoutWorker) Start() {
 	for {
 		select {
 		case <-itw.ctx.Done():
-			if itw.isEligibleToStop(true) {
+			if itw.isEligibleToStop(domain.CONTEXT_DONE) {
 				return
 			}
 		case <-itw.timer.C:
-			if itw.isEligibleToStop(false) {
+			if itw.isEligibleToStop(domain.TIMEOUT) {
 				return
 			}
 		case task, ok := <-itw.tasks.Receive():
-			if !ok {
+			switch {
+			case ok:
+				if err := task.ExecuteTask(); err != nil {
+					itw.logger.Printf("[ERROR] Function %#v return non nil result: %#v", task, err)
+				}
+				itw.timer = time.NewTimer(itw.idealTimeout)
+			case itw.isEligibleToStop(domain.ALL_TASKS_DONE):
 				return
 			}
-			if err := task.ExecuteTask(); err != nil {
-				itw.logger.Printf("[ERROR] Function %#v return non nil result: %#v", task, err)
-			}
-			itw.timer = time.NewTimer(itw.idealTimeout)
 		}
 	}
 }
